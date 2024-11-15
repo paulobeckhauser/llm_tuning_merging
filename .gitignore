@@ -1,2 +1,5 @@
 .env
 .venv/*
+Output*
+job_script.sh
+rm_outputs.sh
