@@ -1,92 +1,85 @@
-# from dotenv import load_dotenv
-# import os
-# import torch
-# from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-from transformers import AutoTokenizer, AutoModelForCausalLM
-# from huggingface_hub import login
+from huggingface_hub import login
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+import torch
+from datasets import load_dataset
+from tqdm import tqdm  # For progress bar
+from dotenv import load_dotenv
+import os
+from evaluate import load
+from torch.utils.data import DataLoader
 
-def main():
+# Load environment variables from .env file
+load_dotenv()
 
-    # # Check PyTorch version
-    # print("PyTorch version:", torch.__version__)
+# Set the custom cache directory
+os.environ['HF_HOME'] = os.getenv('HF_HOME')
 
-    # # Check for GPU
-    # if torch.cuda.is_available():
-    #     print("GPU available:", torch.cuda.get_device_name(0))
-    # else:
-    #     print("No GPU detected.")
+# Get the Hugging Face API key from environment variables
+token = os.getenv("HUGGING_FACE_API_KEY")
 
-    # # Load environment variables from .env file
-    # load_dotenv()
+# Ensure CUDA is available
+device = 0 if torch.cuda.is_available() else -1  # 0 for GPU, -1 for CPU
 
-    # # Access the Hugging Face API key
-    # hf_api_key = os.getenv("HUGGINGFACE_API_KEY")
-    # if not hf_api_key:
-    #     raise ValueError("Hugging Face API key not found. Make sure it's set in the .env file.")
-
-    # print("Hugging Face API Key loaded successfully.")
-
-    # # Login to Hugging Face
-    # try:
-    #     login(hf_api_key)
-    #     print("Logged into Hugging Face successfully.")
-    # except Exception as e:
-    #     raise RuntimeError(f"Failed to log in to Hugging Face: {e}")
-
-    # # Load the tokenizer and model
-    # model_name = "mistralai/Mistral-7B-v0.1"
-    # try:
-    #     tokenizer = AutoTokenizer.from_pretrained(model_name, token=True)
-    #     print("Tokenizer loaded successfully.")
-    # except Exception as e:
-    #     raise RuntimeError(f"Failed to load tokenizer: {e}")
-
-    # try:
-    #     model = AutoModelForCausalLM.from_pretrained(model_name, token=True, device_map="auto")
-    #     print("Model loaded successfully.")
-    # except Exception as e:
-    #     raise RuntimeError(f"Failed to load model: {e}")
-
-    # # Ensure the model is assigned to the device (optional if device_map="auto" works)
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # try:
-    #     model = model.to(device)
-    #     print(f"Model moved to device: {device}")
-    # except Exception as e:
-    #     raise RuntimeError(f"Failed to move model to device: {e}")
-
-    # set the model as tiny llama
-    # model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    # model_name = "mistralai/Mistral-7B-v0.1"
-
-    # # get the tokenizer from the model
-    # tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    # # Load the model
-    # model = AutoModelForCausalLM.from_pretrained(model_name)
-
-    # # Create a pipeline for text generation
-    # generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=0) # Set device to 0 for GPU
-
-    # # Generate text based on a prompt
-    # prompt = "Who is Ada Lovelace?"
-    # generated_text = generator(prompt, max_length=50)
-
-    # # print the result
-    # print(generated_text[0]['generated_text'])
-    # Load model directly
+# Replace "your_huggingface_token" with your actual token
+# login("token")
+login("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")
 
 
-    # tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
-    # model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.1")
+# Load the model and tokenizer
+model = AutoModelForCausalLM.from_pretrained(
+    "mistralai/Mistral-7B-v0.1",
+    torch_dtype=torch.float16,
+    device_map="auto",  # Automatically distributes the model across available devices
+    token="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"
+)
 
-    # from transformers import AutoTokenizer, AutoModelForCausalLM
+tokenizer = AutoTokenizer.from_pretrained(
+    "mistralai/Mistral-7B-v0.1",
+    token="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"
+)
 
-    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
-    model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.1")
-    
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"An error occurred: {e}")
+# Set the pad_token to eos_token if not already set
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+
+# Load the accuracy metric
+accuracy = load("accuracy")
+
+dataset = load_dataset('cais/mmlu', 'abstract_algebra')
+
+def evaluate_model(model, tokenizer, dataset, max_new_tokens=50):
+    correct_predictions = 0
+    total_predictions = 0
+
+    for example in tqdm(dataset, desc="Evaluating", unit="sample"):
+        question = example["question"]
+        choices = example["choices"]
+        label = example["answer"]  # Ensure this is the correct index
+
+        prompt = f"Question:\n{question}\nChoices:\nA: {choices[0]}\nB: {choices[1]}\nC: {choices[2]}\nD: {choices[3]}\nAnswer just the letter (A, B, C, D), don't explain"
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, temperature=0.0)
+        response_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        response_text = response_text[len(prompt) + 1:]
+        response_text = response_text.strip()[0]
+        print(response_text)
+
+        # Map response to choice
+        if "A" in response_text and label == 0:
+            correct_predictions += 1
+        elif "B" in response_text and label == 1:
+            correct_predictions += 1
+        elif "C" in response_text and label == 2:
+            correct_predictions += 1
+        elif "D" in response_text and label == 3:
+            correct_predictions += 1
+
+        total_predictions += 1
+
+    accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+    return accuracy
+
+# Subset of test data for evaluation
+large_dataset = dataset["test"].select(range(20))
+accuracy = evaluate_model(model, tokenizer, large_dataset, max_new_tokens=100)
+print(f"Accuracy on subset: {accuracy:.2%}")
