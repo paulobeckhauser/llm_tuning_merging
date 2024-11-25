@@ -1,53 +1,40 @@
 from huggingface_hub import login
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from datasets import load_dataset
 from tqdm import tqdm  # For progress bar
-from dotenv import load_dotenv
 import os
-from evaluate import load
-from torch.utils.data import DataLoader
+from peft import get_peft_model, LoraConfig, TaskType
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Set the custom cache directory
-os.environ['HF_HOME'] = os.getenv('HF_HOME')
-
-# Get the Hugging Face API key from environment variables
-token = os.getenv("HUGGING_FACE_API_KEY")
-
-# Ensure CUDA is available
-device = 0 if torch.cuda.is_available() else -1  # 0 for GPU, -1 for CPU
+os.environ['HF_HOME'] = '/dtu/blackhole/00/214080/'
 
 # Replace "your_huggingface_token" with your actual token
-# login("token")
-login("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")
-
+login("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")
 
 # Load the model and tokenizer
 model = AutoModelForCausalLM.from_pretrained(
-    "mistralai/Mistral-7B-v0.1",
+    "mistralai/Mistral-7B-Instruct-v0.3",
     torch_dtype=torch.float16,
-    device_map="auto",  # Automatically distributes the model across available devices
-    token="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"
+    device_map="auto"
 )
 
 tokenizer = AutoTokenizer.from_pretrained(
-    "mistralai/Mistral-7B-v0.1",
-    token="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"
+    "mistralai/Mistral-7B-Instruct-v0.3"
 )
 
-# Set the pad_token to eos_token if not already set
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
 
-# Load the accuracy metric
-accuracy = load("accuracy")
+# Apply LoRA
+lora_config = LoraConfig(
+    task_type=TaskType.CAUSAL_LM, 
+    r=8, 
+    lora_alpha=32, 
+    lora_dropout=0.1
+)
+model = get_peft_model(model, lora_config)
 
-dataset = load_dataset('cais/mmlu', 'abstract_algebra')
+dataset = load_dataset('cais/mmlu', 'all')
 
-def evaluate_model(model, tokenizer, dataset, max_new_tokens=50):
+def evaluate_model(model, tokenizer, dataset, max_new_tokens=8):
     correct_predictions = 0
     total_predictions = 0
 
@@ -80,6 +67,6 @@ def evaluate_model(model, tokenizer, dataset, max_new_tokens=50):
     return accuracy
 
 # Subset of test data for evaluation
-large_dataset = dataset["test"].select(range(20))
-accuracy = evaluate_model(model, tokenizer, large_dataset, max_new_tokens=100)
+large_dataset = dataset["test"]
+accuracy = evaluate_model(model, tokenizer, large_dataset, max_new_tokens=8)
 print(f"Accuracy on subset: {accuracy:.2%}")
