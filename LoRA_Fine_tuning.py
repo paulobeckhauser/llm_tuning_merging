@@ -15,11 +15,11 @@ from tqdm import tqdm
 import re
 import pandas as pd
 import os
+import random
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-
 # Step 1: Login to Hugging Face
-# Replace "your_huggingface_token" with your actual token
 login("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")
 
 # Step 2: Define the quantization configuration
@@ -45,18 +45,15 @@ tokenizer = AutoTokenizer.from_pretrained(
     trust_remote_code=True,
 )
 
-# Set the pad token to an existing token to avoid resizing embeddings
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 # Step 5: Prepare the model for k-bit training
 model = prepare_model_for_kbit_training(model)
 
-
 # Step 6: Enable gradient checkpointing and set use_cache to False
 model.config.use_cache = False
 model.gradient_checkpointing_enable()
-
 
 # Step 7: Apply LoRA
 lora_config = LoraConfig(
@@ -68,7 +65,6 @@ lora_config = LoraConfig(
     task_type="CAUSAL_LM",
 )
 model = get_peft_model(model, lora_config)
-
 
 # Step 9: Create the custom dataset
 class AlgebraDataset(Dataset):
@@ -174,60 +170,82 @@ trainer.log_metrics("train", train_result.metrics)
 trainer.save_metrics("train", train_result.metrics)
 trainer.save_state()
 
-
 # Step 13: Train the model
 trainer.train()
 
 # Step 14: Evaluate the model
-def evaluate_model(model, tokenizer, dataset, max_new_tokens=8):
+def evaluate_model_with_chain_of_thought(model, tokenizer, dataset, train_dataset, max_new_tokens=8, num_shots=0, chain_of_thought=False):
     correct_predictions = 0
     total_predictions = 0
     results = []
+
+    if chain_of_thought:
+        num_shots = 0
+            
+    few_shot_prompt = generate_few_shot_prompt(num_shots, train_dataset)
 
     for example in tqdm(dataset, desc="Evaluating", unit="sample"):
         question = example["question"]
         choices = example["choices"]
         correct_label = example["answer"]
 
-        prompt = (
-            f"Question:\n{question}\n"
-            f"Choices:\n"
-            f"A: {choices[0]}\n"
-            f"B: {choices[1]}\n"
-            f"C: {choices[2]}\n"
-            f"D: {choices[3]}\n"
-            "Answer just the letter (A, B, C, D), don't explain.\n"
-        )
+        # Build the prompt
+        if chain_of_thought:
+            prompt = (
+                f"Question:\n{question}\n"
+                f"Choices:\n"
+                f"A: {choices[0]}\n"
+                f"B: {choices[1]}\n"
+                f"C: {choices[2]}\n"
+                f"D: {choices[3]}\n"
+                "Let's think step by step:\n"
+                "- First, consider the problem and analyze the options.\n"
+                "- Then, eliminate incorrect answers and reason logically to find the right one.\n"
+                "Answer the question with only the correct letter (A, B, C, D) as the last token.\n"
+            )
+        else:
+            prompt = (
+                few_shot_prompt
+                + f"Question:\n{question}\n"
+                f"Choices:\n"
+                f"A: {choices[0]}\n"
+                f"B: {choices[1]}\n"
+                f"C: {choices[2]}\n"
+                f"D: {choices[3]}\n"
+                "Answer just the letter (A, B, C, D), don't explain.\n"
+            )
 
+        # Tokenize and generate the model's response
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         outputs = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
             temperature=0.0,
-            pad_token_id=tokenizer.eos_token_id
+            pad_token_id=tokenizer.eos_token_id,
         )
         response_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
         response_text = response_text[len(prompt):].strip()
 
-        # Extract the first occurrence of a letter A-D
-        match = re.search(r'[A-Da-d]', response_text)
+        # Extract the predicted label from the last token of the output
+        match = re.search(r"[A-Da-d]$", response_text)
         if match:
             predicted_label = match.group(0).upper()
-
-            is_correct = predicted_label == correct_label
+            is_correct = predicted_label == chr(65 + correct_label)  # Convert correct_label index to A, B, C, D
             correct_predictions += is_correct
 
-            # Store results for logging
-            results.append({
-                "Question": question,
-                "Choices": choices,
-                "Correct Answer": correct_label,
-                "Predicted Answer": predicted_label,
-                "Correct?": "✔️" if is_correct else "❌"
-            })
+            results.append(
+                {
+                    "Question": question,
+                    "Choices": choices,
+                    "Correct Answer": chr(65 + correct_label),
+                    "Predicted Answer": predicted_label,
+                    "Correct?": "✔️" if is_correct else "❌",
+                }
+            )
 
         total_predictions += 1
 
+    # Compute accuracy
     accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
 
     # Display results as a DataFrame
@@ -235,8 +253,34 @@ def evaluate_model(model, tokenizer, dataset, max_new_tokens=8):
     print("\nEvaluation Results:")
     print(df_results)
 
-    print(f"\nFinal Accuracy on Test Dataset: {accuracy:.2%}")
+    print(f"\nFinal Accuracy on Test Dataset (Chain of Thought: {chain_of_thought}, Num Shots: {num_shots}): {accuracy:.2%}")
     return accuracy
 
+def generate_few_shot_prompt(num_shots, train_dataset):
+    few_shot_prompt = ""
+    if num_shots > 0:
+        # Shuffle the training dataset
+        shuffled_indices = random.sample(range(len(train_dataset)), num_shots)
+        for idx in shuffled_indices:
+            example = train_dataset[idx]
+            question = example["question"]
+            choices = example["choices"]
+            correct_label = chr(65 + example["answer"])
+
+            few_shot_prompt += (
+                f"Question:\n{question}\n"
+                f"Choices:\n"
+                f"A: {choices[0]}\n"
+                f"B: {choices[1]}\n"
+                f"C: {choices[2]}\n"
+                f"D: {choices[3]}\n"
+                f"Answer: {correct_label}\n\n"
+            )
+            
+    return few_shot_prompt
+
+
 # Step 15: Evaluate the model on the test dataset
-accuracy = evaluate_model(model, tokenizer, test_data, max_new_tokens=8)
+accuracy_zero_shot = evaluate_model(model, tokenizer, test_data, max_new_tokens=8, num_shots=0)
+accuracy_five_shot = evaluate_model(model, tokenizer, test_data, max_new_tokens=8, num_shots=5)
+accuracy_CoT = evaluate_model(model, tokenizer, test_data, max_new_tokens=128, chain_of_thought=True)
