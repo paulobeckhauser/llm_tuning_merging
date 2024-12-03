@@ -162,7 +162,7 @@ trainer = Trainer(
     train_dataset=train_data,
 )
 
-# Train the model
+# Step 13: Train the model
 train_result = trainer.train()
 
 # Log training loss and other metrics
@@ -170,11 +170,8 @@ trainer.log_metrics("train", train_result.metrics)
 trainer.save_metrics("train", train_result.metrics)
 trainer.save_state()
 
-# Step 13: Train the model
-trainer.train()
-
 # Step 14: Evaluate the model
-def evaluate_model_with_chain_of_thought(model, tokenizer, dataset, train_dataset, max_new_tokens=8, num_shots=0, chain_of_thought=False):
+def evaluate_model(model, tokenizer, train_dataset, test_dataset, max_new_tokens=8, num_shots=0, chain_of_thought=False):
     correct_predictions = 0
     total_predictions = 0
     results = []
@@ -184,7 +181,7 @@ def evaluate_model_with_chain_of_thought(model, tokenizer, dataset, train_datase
             
     few_shot_prompt = generate_few_shot_prompt(num_shots, train_dataset)
 
-    for example in tqdm(dataset, desc="Evaluating", unit="sample"):
+    for example in tqdm(test_dataset, desc="Evaluating", unit="sample"):
         question = example["question"]
         choices = example["choices"]
         correct_label = example["answer"]
@@ -201,7 +198,7 @@ def evaluate_model_with_chain_of_thought(model, tokenizer, dataset, train_datase
                 "Let's think step by step:\n"
                 "- First, consider the problem and analyze the options.\n"
                 "- Then, eliminate incorrect answers and reason logically to find the right one.\n"
-                "Answer the question with only the correct letter (A, B, C, D) as the last token.\n"
+                "- Lastly, give the answer using only the correspondent letter (A, B, C, D).\n"
             )
         else:
             prompt = (
@@ -224,24 +221,27 @@ def evaluate_model_with_chain_of_thought(model, tokenizer, dataset, train_datase
             pad_token_id=tokenizer.eos_token_id,
         )
         response_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        print('-' * 50)
+        print(response_text)
+        print('- ' * 50)
         response_text = response_text[len(prompt):].strip()
+        print(response_text)
 
-        # Extract the predicted label from the last token of the output
-        match = re.search(r"[A-Da-d]$", response_text)
-        if match:
-            predicted_label = match.group(0).upper()
-            is_correct = predicted_label == chr(65 + correct_label)  # Convert correct_label index to A, B, C, D
-            correct_predictions += is_correct
+        if chain_of_thought is True:
+            predicted_label = response_text[-1].upper()
+        else:
+            predicted_label = response_text[0].upper()
+            
+        is_correct = predicted_label == correct_label
+        correct_predictions += is_correct
 
-            results.append(
-                {
-                    "Question": question,
-                    "Choices": choices,
-                    "Correct Answer": chr(65 + correct_label),
-                    "Predicted Answer": predicted_label,
-                    "Correct?": "✔️" if is_correct else "❌",
-                }
-            )
+        results.append(
+            {
+                "Correct Answer": correct_label,
+                "Predicted Answer": predicted_label,
+                "Correct?": "✔️" if is_correct else "❌",
+            }
+        )
 
         total_predictions += 1
 
@@ -259,13 +259,12 @@ def evaluate_model_with_chain_of_thought(model, tokenizer, dataset, train_datase
 def generate_few_shot_prompt(num_shots, train_dataset):
     few_shot_prompt = ""
     if num_shots > 0:
-        # Shuffle the training dataset
         shuffled_indices = random.sample(range(len(train_dataset)), num_shots)
         for idx in shuffled_indices:
             example = train_dataset[idx]
             question = example["question"]
             choices = example["choices"]
-            correct_label = chr(65 + example["answer"])
+            correct_label = example["answer"].upper()
 
             few_shot_prompt += (
                 f"Question:\n{question}\n"
@@ -281,6 +280,6 @@ def generate_few_shot_prompt(num_shots, train_dataset):
 
 
 # Step 15: Evaluate the model on the test dataset
-accuracy_zero_shot = evaluate_model(model, tokenizer, test_data, max_new_tokens=8, num_shots=0)
-accuracy_five_shot = evaluate_model(model, tokenizer, test_data, max_new_tokens=8, num_shots=5)
-accuracy_CoT = evaluate_model(model, tokenizer, test_data, max_new_tokens=128, chain_of_thought=True)
+accuracy_zero_shot = evaluate_model(model, tokenizer, train_data, test_data, max_new_tokens=8, num_shots=0)
+accuracy_five_shot = evaluate_model(model, tokenizer, train_data, test_data, max_new_tokens=8, num_shots=5)
+accuracy_CoT = evaluate_model(model, tokenizer, train_data, test_data, max_new_tokens=1024, chain_of_thought=True)

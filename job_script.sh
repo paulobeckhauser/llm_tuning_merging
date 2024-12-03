@@ -40,5 +40,5 @@ module load cuda/11.6
 
 /appl/cuda/11.6.0/samples/bin/x86_64/linux/release/deviceQuery
 
-source ../.venv/bin/activate
+source .venv/bin/activate
 python "LoRA_Fine_tuning.py"
