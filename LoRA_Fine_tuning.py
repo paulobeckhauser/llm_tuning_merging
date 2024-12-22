@@ -20,7 +20,7 @@ import random
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Step 1: Login to Hugging Face
-login("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")
+login("")
 
 # Step 2: Define the quantization configuration
 quantization_config = BitsAndBytesConfig(

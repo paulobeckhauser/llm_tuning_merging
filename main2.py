@@ -18,7 +18,7 @@ import re
 
 # Step 1: Login to Hugging Face
 # Replace "your_huggingface_token" with your actual token
-login("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")
+login("")
 
 # Step 2: Define the quantization configuration
 quantization_config = BitsAndBytesConfig(

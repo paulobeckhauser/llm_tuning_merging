@@ -11,10 +11,10 @@ from accelerate import init_empty_weights, load_checkpoint_and_dispatch
 # Check if CUDA is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-os.environ['HF_HOME'] = '/dtu/blackhole/00/214080/'
+os.environ['HF_HOME'] = ''
 
 # Replace "your_huggingface_token" with your actual token
-login("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")
+login("")
 
 # Initialize the model with empty weights
 with init_empty_weights():

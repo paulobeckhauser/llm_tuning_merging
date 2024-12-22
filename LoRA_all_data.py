@@ -22,7 +22,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Step 1: Login to Hugging Face
 # Replace "your_huggingface_token" with your actual token
-login("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")
+login("")
 
 # Step 2: Define the quantization configuration
 quantization_config = BitsAndBytesConfig(
