@@ -14,7 +14,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 os.environ['HF_HOME'] = '/dtu/blackhole/00/214080/'
 
 # Replace "your_huggingface_token" with your actual token
-login("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")
+login("")
 
 # Initialize the model with empty weights
 with init_empty_weights():
