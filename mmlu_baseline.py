@@ -5,7 +5,7 @@ from datasets import load_dataset
 from tqdm import tqdm  # For progress bar
 
 # Replace "your_huggingface_token" with your actual token
-login("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")
+login("")
 
 # Load the model and tokenizer
 model = AutoModelForCausalLM.from_pretrained(

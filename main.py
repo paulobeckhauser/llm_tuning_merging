@@ -22,7 +22,6 @@ device = 0 if torch.cuda.is_available() else -1  # 0 for GPU, -1 for CPU
 
 # Replace "your_huggingface_token" with your actual token
 # login("token")
-login("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")
 
 
 # Load the model and tokenizer
@@ -30,12 +29,12 @@ model = AutoModelForCausalLM.from_pretrained(
     "mistralai/Mistral-7B-v0.1",
     torch_dtype=torch.float16,
     device_map="auto",  # Automatically distributes the model across available devices
-    token="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"
+    token=""
 )
 
 tokenizer = AutoTokenizer.from_pretrained(
     "mistralai/Mistral-7B-v0.1",
-    token="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"
+    token=""
 )
 
 # Set the pad_token to eos_token if not already set
